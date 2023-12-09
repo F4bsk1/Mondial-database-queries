@@ -36,8 +36,6 @@ HAVING COUNT(*) > 1;
 
 
 -- Uppgift 2 Write a query for all the languages in the database, that states number of speakers and sorts them from most spoken to least spoken.
--- OBS! lite osäker på om man ska räkna med språken som har null values (dem ligger längst bak)
-
 --percentage = andel som pratar ett språk i ett land
 --population = number of people in a country
 
@@ -55,27 +53,6 @@ GROUP BY
 ORDER BY
     numberspeaker DESC,
     l.name;
-
-
-SELECT 
-    language, COUNT(language)
-FROM
-    spoken
-GROUP BY
-    language
-HAVING
-    COUNT(language) > 1
-ORDER BY 
-    language;
-
-SELECT* FROM language;
-
-SELECT
-    COUNT(superlanguage) AS count,
-    name
-FROM language
-GROUP BY name
-ORDER BY count DESC;
 
 
 -- Uppgift 3 Which bordering countries have the greatest contrast in wealth? We define wealth as GDP
@@ -171,10 +148,6 @@ ORDER BY
     min ASC,
     name;
 
-SELECT * FROM borders WHERE country1 = 'S' ORDER BY country1;
-
-SELECT * FROM borders WHERE country1 = 'R' ORDER BY country1;
-
 
 -- 2. Rivers
 SELECT* FROM river ORDER BY river;
@@ -229,99 +202,3 @@ ORDER BY
     rank ASC, 
     pathlength DESC;
 
-
-
-
-
-
-
-
-
-
-
-
-
---revised
-WITH RECURSIVE RiverPaths AS (
-    SELECT
-        r1.name AS subriver,
-        r1.river AS mainriver,
-        1 AS numrivers,
-        r1.length AS totlength,
-        ARRAY[r1.name::text, r1.river::text] AS path
-    FROM
-        river r1
-    WHERE
-        r1.river IS NULL AND r1.name IN ('Nile', 'Amazon', 'Yangtze', 'Rhein', 'Danau', 'Mississippi')
-    UNION ALL
-    SELECT
-        r2.name AS subriver,
-        r2.river AS mainriver,
-        rp.numrivers + 1 AS numrivers,
-        rp.totlength + r2.length AS totlength,
-        rp.path || r2.name::text AS path
-    FROM
-        river r2
-    JOIN RiverPaths rp ON rp.subriver = r2.river
-    GROUP BY
-        numrivers,
-        name,
-        rp.totlength,
-        path
-)
-SELECT
-    RANK() OVER (ORDER BY numrivers ASC, totlength DESC) AS rank,
-    array_to_string(path, ' - ') AS path,
-    numrivers,
-    totlength
-FROM
-    RiverPaths
-WHERE
-    numrivers > 1
-ORDER BY
-    rank, totlength DESC;
-
-
-
-
-
---min
-WITH RECURSIVE RiverPaths AS (
-  -- Base case: select the specified major rivers
-  SELECT
-    r1.name::text AS subriver,  -- Cast river name to text
-    r1.river::text AS path mainriver,  -- Start the path with the river name
-    1 AS numrivers, -- Start with one river
-    r1.length AS pathlength, -- Start with the length of the river
-    ARRAY[r1.name::text, r1.river::text]
-  FROM
-    river r1
-  WHERE
-    r1.name IN ('Nile', 'Amazonas', 'Yangtze', 'Rhein', 'Danau', 'Mississippi') AND r1.river IS NULL
-  UNION
-  -- Recursive case: add tributaries to the path
-  SELECT
-    r2.name AS subriver,
-    r2.river AS mainriver,
-    rp.numrivers + 1, AS numrivers, -- Increment the number of rivers in the path
-    rp.pathlength + rp.length AS pathlength, -- Add the tributary's length to the total length
-    rp.path || rp.name::text AS path
-  FROM
-    RiverPaths rp
-  INNER JOIN river r2 ON rp.subriver = r2.river
-  GROUP BY
-    numrivers, pathlength, path, name 
-)
-SELECT 
-    RANK() OVER (ORDER BY numrivers) AS rank,  array_to_string(path, ' - ') AS path, numrivers, pathlength 
-    FROM (
-        SELECT
-        RANK() OVER (PARTITION BY path[1] ORDER BY numrivers DESC) AS mainriverrank, path, numrivers, pathlength
-        FROM
-        RiverBranches
-        ),
-    WHERE 
-        manriverrank = 1
-    ORDER BY 
-        rank DESC, 
-        branchLength DESC;
