@@ -1,0 +1,327 @@
+Active: 1699539369336@@psql-dd1368-ht23.sys.kth.se@5432@falu3@public
+-- Querys part 2 labb3 --
+
+ -- Uppgift 1 Of the countries that have any land borders with other countries, show a list of those -- 
+ -- who have the lowest number of bordering land neighbors. --
+WITH BorderCounts AS ( --CTE
+    SELECT 
+        c.name,
+        COUNT(*) AS num,
+        MIN(COUNT(*)) OVER () AS numMin
+    FROM 
+        borders b
+    JOIN 
+        country c ON c.code = b.country1 OR c.code = b.country2 --
+    GROUP BY 
+        c.code 
+) -- displays code name and number of land borders OBS country1 innehåller inte alla gränser därav måste country2 också finnas med
+SELECT 
+    name, 
+    num
+FROM 
+    BorderCounts
+WHERE
+    num = numMin
+ORDER BY 
+    num ASC, name;
+
+
+
+--check if a countrie is duplicated
+SELECT Country1, Country2
+FROM borders
+GROUP BY Country1, Country2
+HAVING COUNT(*) > 1;
+
+
+
+-- Uppgift 2 Write a query for all the languages in the database, that states number of speakers and sorts them from most spoken to least spoken.
+-- OBS! lite osäker på om man ska räkna med språken som har null values (dem ligger längst bak)
+
+--percentage = andel som pratar ett språk i ett land
+--population = number of people in a country
+
+SELECT
+    l.name AS language,
+    COALESCE(ROUND(SUM(s.percentage * c.population / 100)), 0) AS numberspeaker --coalesce assign every null value to 0
+FROM
+    language l
+LEFT JOIN 
+    spoken s ON l.name = s.language -- want to include all language
+LEFT JOIN 
+    country c ON s.country = c.code -- want to match both language, spoken with countries
+GROUP BY
+    l.name
+ORDER BY
+    numberspeaker DESC,
+    l.name;
+
+
+SELECT 
+    language, COUNT(language)
+FROM
+    spoken
+GROUP BY
+    language
+HAVING
+    COUNT(language) > 1
+ORDER BY 
+    language;
+
+SELECT* FROM language;
+
+SELECT
+    COUNT(superlanguage) AS count,
+    name
+FROM language
+GROUP BY name
+ORDER BY count DESC;
+
+
+-- Uppgift 3 Which bordering countries have the greatest contrast in wealth? We define wealth as GDP
+--fel bara hälften (men tycker det är bättre då det annars bara blir en dubblering)
+SELECT
+    b.country1,
+    e1.gdp AS gdp1,
+    b.country2,
+    e2.gdp AS gdp2, 
+    ROUND(GREATEST(e1.gdp, e2.gdp) / LEAST(e1.gdp, e2.gdp)) AS ratio
+FROM
+    borders b
+JOIN economy e1 ON b.country1 = e1.country
+JOIN economy e2 ON b.country2 = e2.country
+WHERE
+    e1.gdp IS NOT NULL AND e2.gdp IS NOT NULL -- AND country1 = 'CN' OR country2 = 'CN'
+ORDER BY
+    ratio DESC;
+
+--rätt med båda vägarna
+SELECT
+    b.country1,
+    e1.gdp AS gdp1,
+    b.country2,
+    e2.gdp AS gdp2, 
+    ROUND (GREATEST(e1.gdp, e2.gdp) / LEAST(e1.gdp, e2.gdp)) AS ratio
+FROM
+    borders b
+LEFT JOIN 
+    economy e1 ON b.country1 = e1.country
+LEFT JOIN 
+    economy e2 ON b.country2 = e2.country
+WHERE
+    e1.gdp IS NOT NULL AND e2.gdp IS NOT NULL
+UNION
+SELECT
+    b.country2 AS country1,
+    e2.gdp AS gdp1,
+    b.country1 AS country2,
+    e1.gdp AS gdp2,
+    ROUND (GREATEST(e1.gdp, e2.gdp) / LEAST(e1.gdp, e2.gdp)) AS ratio
+FROM
+    borders b
+LEFT JOIN 
+    economy e1 ON b.country1 = e1.country
+LEFT JOIN 
+    economy e2 ON b.country2 = e2.country
+WHERE
+    e1.gdp IS NOT NULL AND e2.gdp IS NOT NULL
+ORDER BY
+    ratio DESC;
+
+
+-- P+ --
+
+-- 1. Crossing borders from Sweden ( no double backing )
+
+WITH RECURSIVE CountryPath AS ( -- recursive common table expression (CTE)
+  SELECT 
+      c.code,
+      c.name,
+      0 AS crossings 
+  FROM 
+      country c
+  WHERE 
+      c.code = 'S'
+  UNION  -- base case where we hard code sweden and sets crossing to 0. 
+  SELECT   
+      c.code,
+      c.name,
+      cp.crossings + 1 -- increase crossing for every iteration
+  FROM 
+      CountryPath cp
+  JOIN 
+    borders b ON cp.code = b.country1 OR cp.code = b.country2 -- recursive with either c1 or c2 to find next border
+  JOIN 
+    country c ON c.code = b.country1 OR c.code = b.country2 -- we can have neighbours in both c1 and c2
+  WHERE
+      cp.code <> c.code AND cp.crossings < 5 -- don't exceed 5 crossings and make sure we wont revisit a country again <> är lika med !=
+)
+SELECT 
+    code,
+    name,
+    MIN(crossings) AS min -- aggregate, crossings to min
+FROM 
+    CountryPath
+WHERE
+    code <> 'S' -- remove sweden as a path
+GROUP BY
+    code,
+    name
+ORDER BY
+    min ASC,
+    name;
+
+SELECT * FROM borders WHERE country1 = 'S' ORDER BY country1;
+
+SELECT * FROM borders WHERE country1 = 'R' ORDER BY country1;
+
+
+-- 2. Rivers
+SELECT* FROM river ORDER BY river;
+
+SELECT* FROM river WHERE name = 'Missouri' ORDER BY name;
+SELECT* FROM river WHERE name = 'Donau' ORDER BY name;
+SELECT* FROM riverthrough;
+
+SELECT* FROM river ORDER BY river;
+
+-- 2. den rätta
+WITH RECURSIVE RiverPaths AS (
+  SELECT
+    r1.name::text AS greaterRiver,
+    r1.river::text AS mainriver,
+    1 AS numrivers,
+    r1.length AS pathlength,
+    ARRAY[r1.name::text] AS path -- Only include the river name to start
+  FROM
+    river r1
+  WHERE
+    r1.name IN ('Nile', 'Amazonas', 'Yangtze', 'Rhein', 'Donau', 'Mississippi')
+  UNION
+  SELECT
+    r2.name AS subriver,
+    r2.river AS mainriver,
+    rp.numrivers + 1 AS numrivers,
+    rp.pathlength + r2.length AS pathlength,
+    rp.path || r2.name::text AS path
+  FROM
+    RiverPaths rp
+  JOIN 
+    river r2 ON rp.greaterRiver = r2.river -- 
+)
+SELECT 
+    RANK() OVER (ORDER BY numrivers ASC) AS rank, 
+    array_to_string(path, ' - ') AS path, 
+    numrivers, 
+    pathlength 
+FROM (
+    SELECT
+        RANK() OVER (PARTITION BY path[1] ORDER BY numrivers DESC) AS mainriverrank,
+        path, 
+        numrivers, 
+        pathlength
+    FROM
+        RiverPaths 
+) AS namn
+WHERE 
+    mainriverrank = 1
+ORDER BY 
+    rank ASC, 
+    pathlength DESC;
+
+
+
+
+
+
+
+
+
+
+
+
+
+--revised
+WITH RECURSIVE RiverPaths AS (
+    SELECT
+        r1.name AS subriver,
+        r1.river AS mainriver,
+        1 AS numrivers,
+        r1.length AS totlength,
+        ARRAY[r1.name::text, r1.river::text] AS path
+    FROM
+        river r1
+    WHERE
+        r1.river IS NULL AND r1.name IN ('Nile', 'Amazon', 'Yangtze', 'Rhein', 'Danau', 'Mississippi')
+    UNION ALL
+    SELECT
+        r2.name AS subriver,
+        r2.river AS mainriver,
+        rp.numrivers + 1 AS numrivers,
+        rp.totlength + r2.length AS totlength,
+        rp.path || r2.name::text AS path
+    FROM
+        river r2
+    JOIN RiverPaths rp ON rp.subriver = r2.river
+    GROUP BY
+        numrivers,
+        name,
+        rp.totlength,
+        path
+)
+SELECT
+    RANK() OVER (ORDER BY numrivers ASC, totlength DESC) AS rank,
+    array_to_string(path, ' - ') AS path,
+    numrivers,
+    totlength
+FROM
+    RiverPaths
+WHERE
+    numrivers > 1
+ORDER BY
+    rank, totlength DESC;
+
+
+
+
+
+--min
+WITH RECURSIVE RiverPaths AS (
+  -- Base case: select the specified major rivers
+  SELECT
+    r1.name::text AS subriver,  -- Cast river name to text
+    r1.river::text AS path mainriver,  -- Start the path with the river name
+    1 AS numrivers, -- Start with one river
+    r1.length AS pathlength, -- Start with the length of the river
+    ARRAY[r1.name::text, r1.river::text]
+  FROM
+    river r1
+  WHERE
+    r1.name IN ('Nile', 'Amazonas', 'Yangtze', 'Rhein', 'Danau', 'Mississippi') AND r1.river IS NULL
+  UNION
+  -- Recursive case: add tributaries to the path
+  SELECT
+    r2.name AS subriver,
+    r2.river AS mainriver,
+    rp.numrivers + 1, AS numrivers, -- Increment the number of rivers in the path
+    rp.pathlength + rp.length AS pathlength, -- Add the tributary's length to the total length
+    rp.path || rp.name::text AS path
+  FROM
+    RiverPaths rp
+  INNER JOIN river r2 ON rp.subriver = r2.river
+  GROUP BY
+    numrivers, pathlength, path, name 
+)
+SELECT 
+    RANK() OVER (ORDER BY numrivers) AS rank,  array_to_string(path, ' - ') AS path, numrivers, pathlength 
+    FROM (
+        SELECT
+        RANK() OVER (PARTITION BY path[1] ORDER BY numrivers DESC) AS mainriverrank, path, numrivers, pathlength
+        FROM
+        RiverBranches
+        ),
+    WHERE 
+        manriverrank = 1
+    ORDER BY 
+        rank DESC, 
+        branchLength DESC;
